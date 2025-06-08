@@ -1,0 +1,115 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.25;
+
+interface IUniswapV2Router02 {
+    function swapExactETHForTokens(
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external payable returns (uint[] memory amounts);
+
+    function swapExactTokensForETH(
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external returns (uint[] memory amounts);
+
+    function getAmountsOut(
+        uint amountIn,
+        address[] calldata path
+    ) external view returns (uint[] memory amounts);
+}
+
+interface IERC20 {
+    function approve(address spender, uint value) external returns (bool);
+    function balanceOf(address account) external view returns (uint256);
+    function transfer(address recipient, uint256 amount) external returns (bool);
+}
+
+contract ArbitrageBot {
+    address public owner;
+    
+    address constant UNISWAP_V2_ROUTER = 0xYourUniswapV2RouterAddress; // Example: 0x7a250d5630B4cF539739df2C5dAcb4c659F2488D
+    address constant WETH = 0xYourWETHAddress; // Example: 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
+    address constant USDT = 0xYourUSDTAddress; // Example: 0xdAC17F958D2ee523a2206206994597C13D831ec7
+    
+    IUniswapV2Router02 public router = IUniswapV2Router02(UNISWAP_V2_ROUTER);
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not owner");
+        _;
+    }
+
+    constructor() {
+        owner = msg.sender;
+    }
+
+    receive() external payable {}
+
+    function getETHtoUSDTPrice(uint amountETH) public view returns (uint) {
+        address ;
+        path[0] = WETH;
+        path[1] = USDT;
+        uint[] memory amounts = router.getAmountsOut(amountETH, path);
+        return amounts[1];
+    }
+
+    function getUSDTtoETHPrice(uint amountUSDT) public view returns (uint) {
+        address ;
+        path[0] = USDT;
+        path[1] = WETH;
+        uint[] memory amounts = router.getAmountsOut(amountUSDT, path);
+        return amounts[1];
+    }
+
+    function executeArbitrage(uint minProfitETH) external onlyOwner {
+        uint ethBalanceBefore = address(this).balance;
+        require(ethBalanceBefore > 0, "No ETH to trade");
+
+        // Buy USDT
+        address ;
+        path[0] = WETH;
+        path[1] = USDT;
+
+        uint[] memory amountsOut = router.swapExactETHForTokens{value: ethBalanceBefore}(
+            1, // slippage tolerance (set to 1 wei for simplicity)
+            path,
+            address(this),
+            block.timestamp + 300
+        );
+
+        uint usdtReceived = amountsOut[1];
+
+        // Approve router to spend USDT
+        IERC20(USDT).approve(UNISWAP_V2_ROUTER, usdtReceived);
+
+        // Sell USDT back to ETH
+        path[0] = USDT;
+        path[1] = WETH;
+        uint[] memory amountsOut2 = router.swapExactTokensForETH(
+            usdtReceived,
+            1, // slippage tolerance
+            path,
+            address(this),
+            block.timestamp + 300
+        );
+
+        uint ethBalanceAfter = address(this).balance;
+        require(
+            ethBalanceAfter > ethBalanceBefore + minProfitETH,
+            "No profit made"
+        );
+    }
+
+    function withdrawETH() external onlyOwner {
+        payable(owner).transfer(address(this).balance);
+    }
+
+    function withdrawTokens(address token) external onlyOwner {
+        uint tokenBalance = IERC20(token).balanceOf(address(this));
+        IERC20(token).transfer(owner, tokenBalance);
+    }
+}
